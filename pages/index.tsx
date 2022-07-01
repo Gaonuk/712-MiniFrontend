@@ -1,12 +1,10 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
+import { useState } from 'react';
 import Head from 'next/head';
 // import styles from '../styles/Home.module.css';
 import {
   FormControl,
-  FormLabel,
-  FormErrorMessage,
-  FormHelperText,
   NumberInput,
   NumberInputField,
   Container,
@@ -18,26 +16,45 @@ import {
   Button,
   Stack
 } from '@chakra-ui/react'
+import qs from "qs"
+
 
 const Home: NextPage = () => {
+  const [sellAmount, setSellAmount] = useState(0);
+  const [buyAmount, setBuyAmount] = useState(0);
+
+  const fetchBuyAmount = async (event: any) => {
+    // const params = {
+    //   sellToken: 'ETH',    
+    //   buyToken: 'DAI',
+    //   sellAmount: event.value, // 1 ETH = 10^18 wei
+    // }
+    // const response = await fetch(
+    //   `https://api.0x.org/swap/v1/quote?${qs.stringify(params)}`
+    // );
+
+    console.log(event);
+  }
+
   return (
     <Center h='100vh' w='100vw'>
       <Container centerContent>
-        <VStack spacing={5}>
-          <ConnectButton />
-          <Text>
-            Welcome to <Link color='#2476FD' href='#'> Mini Frontend</Link>!
+        <VStack spacing={8}>
+          <Text fontSize='5xl'>
+            Welcome to <Link color='#2476FD' href='#'> Mini Swap</Link>!
           </Text>
+          <Box></Box>
+          <ConnectButton />
+          <Box></Box>
           <Box borderWidth='1px' borderRadius='lg' maxW='sm' overflow='hidden' p='9'>
             <FormControl>
-              <FormLabel htmlFor='amount' alignContent={'center'}>Swap With Permit</FormLabel>
               <Stack spacing={5}>
-              <NumberInput>
-                <NumberInputField id='amount' />
-              </NumberInput>
-              <NumberInput>
-                <NumberInputField id='amount' />
-              </NumberInput>
+                <NumberInput>
+                  <NumberInputField id='sellAmount' onChange={fetchBuyAmount} />
+                </NumberInput>
+                <NumberInput>
+                  <NumberInputField id='buyAmount' disabled />
+                </NumberInput>
               </Stack>
             </FormControl>
             <Stack spacing={2} align='center'>
