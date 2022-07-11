@@ -32,13 +32,10 @@ import { depositABI } from '../helpers/depositABI'
 import { ethers, providers } from 'ethers';
 import { web3Abi } from '../helpers/web3Abi';
 import { RelayProvider } from '@opengsn/provider';
-import { gaslessABI } from '../helpers/gaslessABI';
 
-const usdcAddress = "0x98eddadcfde04dc22a0e62119617e74a6bc77313"
-const web3Address = "0x95bd8d42f30351685e96c62eddc0d0613bf9a87a"
-const contractAddress = "0xca8b49076d1a8039599e24979abf819af784c27a"
-const gaslessAddress = "0xdd8cb59289bf7e324a37f74f8abb16d9f133cb2e"
-const paymasterAddress = "0x09635F643e140090A9A8Dcd712eD6285858ceBef"
+const usdcAddress = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+const web3Address = "0xBcD2C5C78000504EFBC1cE6489dfcaC71835406A"
+const contractAddress = "0x0e075cB6f980203F8e930a0B527CDbE07F303eAD"
 
 const Home: NextPage = () => {
   const { address, isConnecting, isDisconnected } = useAccount()
@@ -58,6 +55,11 @@ const Home: NextPage = () => {
       deadline: 0
     }
   });
+  const [quoteData, setQuoteData] = useState({
+    spender: "",
+    swapTarget: "",
+    swapCallData: ""
+  })
   const [permitStatus, setPermitStatus] = useState(false);
   const [approveStatus, setApproveStatus] = useState(false);
   const { data } = useContractRead({
@@ -87,33 +89,38 @@ const Home: NextPage = () => {
     },
     watch: true,
   })
-  const depositWrite = useContractWrite({
+
+  const swapWithPermit = useContractWrite({
     addressOrName: contractAddress,
     contractInterface: depositABI,
-    functionName: 'depositWithPermit',
+    functionName: 'swapWithPermit',
   })
-  const depositApproval = useContractWrite({
-    addressOrName: gaslessAddress,
-    contractInterface: gaslessABI,
-    functionName: 'deposit',
+
+  const swapWithApproval = useContractWrite({
+    addressOrName: contractAddress,
+    contractInterface: depositABI,
+    functionName: 'swapNormal',
   })
-  const usdcMint = useContractWrite({
-    addressOrName: usdcAddress,
-    contractInterface: usdcABI,
-    functionName: 'mint',
-    args: [address, 1000* 10 ** 6]
-  })
+
   const usdcApprove = useContractWrite({
     addressOrName: usdcAddress,
     contractInterface: usdcABI,
     functionName: 'approve'
   })
-  const web3Mint = useContractWrite({
-    addressOrName: web3Address,
-    contractInterface: web3Abi,
-    functionName: 'mint',
-    args: [address, 1000* 10 ** 18]
+
+  const usdcPermit = useContractWrite({
+    addressOrName: usdcAddress,
+    contractInterface: usdcABI,
+    functionName: 'permit'
   })
+
+  const usdcAllowance = useContractRead({
+    addressOrName: usdcAddress,
+    contractInterface: usdcABI,
+    functionName: 'allowance',
+    args: [address, contractAddress]
+  })
+
   const { signTypedDataAsync } = useSignTypedData()
   const { sendTransactionAsync } =
     useSendTransaction()
@@ -121,18 +128,23 @@ const Home: NextPage = () => {
     if (usdcAmount === 0) return
     const params = {
       sellToken: 'USDC',
-      buyToken: '0xe8e8486228753E01Dbc222dA262Aa706Bd67e601',
+      buyToken: web3Address,
       sellAmount: usdcAmount * 10 ** 6, // 1 ETH = 10^18 wei
     }
     const response = await fetch(
-      `https://api.0x.org/swap/v1/quote?${qs.stringify(params)}`
+      `https://polygon.api.0x.org/swap/v1/quote?${qs.stringify(params)}`
     );
     const quote = await response.json()
     setWeb3Amount(quote.buyAmount);
+    setQuoteData(quoteData => ({
+      spender: quote.allowanceTarget,
+      swapTarget: quote.to,
+      swapCallData: quote.data,
+    }))
   }
 
   const makePermit = async () => {
-    let { domain, types, message } = await makeUsdcPermit(address, contractAddress, +data, 10000000, usdcAddress)
+    let { domain, types, message } = await makeUsdcPermit(address, contractAddress, +data, usdcAmount * 10 ** 6, usdcAddress)
     let signature = await signTypedDataAsync({
       domain,
       types,
@@ -146,71 +158,48 @@ const Home: NextPage = () => {
       message
     }));
     setPermitStatus(permitStatus => true)
-    console.log(permit);
-  }
-
-  const makePermitForGasless = async () => {
-    let { domain, types, message } = await makeUsdcPermit(address, gaslessAddress, +data, usdcAmount * 10**6, usdcAddress)
-    let signature = await signTypedDataAsync({
-      domain,
-      types,
-      value: message
-    });
-    const { v, r, s } = getSignatureParameters(signature);
-    setPermit(permit => ({
-      v,
-      r,
-      s,
-      message
-    }));
-    setPermitStatus(permitStatus => true)
-    console.log(permit);
-  }
-
-  const getUSDC = async () => {
-    const params = {
-      sellToken: 'ETH',
-      buyToken: 'USDC',
-      sellAmount: 1 * 10 ** 18, // 1 ETH = 10^18 wei
-    }
-    const response = await fetch(
-      `https://api.0x.org/swap/v1/quote?${qs.stringify(params)}`
-    );
-
-    console.log(`https://api.0x.org/swap/v1/quote?${qs.stringify(params)}`)
-
-    const quote = await response.json()
-
-    await sendTransactionAsync({
-      request: {
-        from: quote.from,
-        to: quote.to,
-        data: quote.data,
-        value: ethers.BigNumber.from(quote.value || 0),
-        gasPrice: ethers.BigNumber.from(quote.gasPrice),
-        gasLimit: ethers.BigNumber.from(quote.gas)
-      }
-    })
   }
 
   const approveUSDC = async () => {
     await usdcApprove.write({
-      args: [address, usdcAmount]
+      args: [contractAddress, usdcAmount * 10 ** 6]
     })
 
   }
 
-  const depositWithApproval = async () => {
-    await depositApproval.writeAsync({
-      args: [address, usdcAmount, web3Amount],
-      overrides: {
-        gasLimit: 3000
-      }
+  const permitUsdc = async () => {
+    let web3 = new ethers.providers.Web3Provider(window.ethereum)
+    let signer = web3.getSigner()
+    let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
+    console.log(permit)
+    let result = await contract.permit(address, contractAddress, usdcAmount * 10 ** 6, permit.message.deadline, permit.v, permit.r, permit.s, {
+      gasLimit: 21000
+    });
+  }
+
+  const checkAllowance = async () => {
+    let web3 = new ethers.providers.Web3Provider(window.ethereum)
+    let signer = web3.getSigner()
+    let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
+    let result = await contract.allowance(address, contractAddress);
+    console.log(+result)
+  }
+
+
+  const approvalSwap = async () => {
+    await swapWithApproval.writeAsync({
+      args: [usdcAddress, usdcAmount * 10 ** 6, {
+        sellToken: usdcAddress,
+        buyToken: web3Address,
+        spender: quoteData.spender,
+        swapTarget: quoteData.swapTarget,
+        swapCallData: quoteData.swapCallData,
+      }]
     })
   }
 
-  const depositContract = async () => {
-    await depositWrite.writeAsync({
+  const permitSwap = async () => {
+    await swapWithPermit.writeAsync({
       args: [{
         _tokenContract: usdcAddress,
         _amount: usdcAmount * 10 ** 6,
@@ -221,38 +210,47 @@ const Home: NextPage = () => {
         _v: permit.v,
         _r: permit.r,
         _s: permit.s,
-      }, web3Amount],
+      }, {
+        sellToken: usdcAddress,
+        buyToken: web3Address,
+        spender: quoteData.spender,
+        swapTarget: quoteData.swapTarget,
+        swapCallData: quoteData.swapCallData,
+      }],
+      overrides: {
+        gasLimit: 21000
+      }
     })
   }
 
-  const depositGasless = async () => {
-    const gsnProvider = await RelayProvider.newProvider({
-      provider: window.ethereum as any,
-      config: {
-        paymasterAddress,
-        loggerConfiguration: {
-          logLevel: 'debug'
-      }
-      }
-    }).init()
+  // const depositGasless = async () => {
+  //   const gsnProvider = await RelayProvider.newProvider({
+  //     provider: window.ethereum as any,
+  //     config: {
+  //       paymasterAddress,
+  //       loggerConfiguration: {
+  //         logLevel: 'debug'
+  //     }
+  //     }
+  //   }).init()
 
-    let prov = new ethers.providers.Web3Provider(gsnProvider as any as providers.ExternalProvider)
-    let signer = prov.getSigner()
-    let contract = await new ethers.Contract(gaslessAddress, gaslessABI, signer)
-    let transaction = await contract.depositWithPermit({
-      _tokenContract: usdcAddress,
-      _amount: usdcAmount * 10**6,
-      _owner: address,
-      _spender: contractAddress,
-      _value: permit.message.value,
-      _deadline: permit.message.deadline,
-      _v: permit.v,
-      _r: permit.r,
-      _s: permit.s,
-    }, web3Amount, {
-      gasLimit: 10000
-    })
-  }
+  //   let prov = new ethers.providers.Web3Provider(gsnProvider as any as providers.ExternalProvider)
+  //   let signer = prov.getSigner()
+  //   let contract = await new ethers.Contract(gaslessAddress, gaslessABI, signer)
+  //   let transaction = await contract.swapWithPermit({
+  //     _tokenContract: usdcAddress,
+  //     _amount: usdcAmount * 10**6,
+  //     _owner: address,
+  //     _spender: contractAddress,
+  //     _value: permit.message.value,
+  //     _deadline: permit.message.deadline,
+  //     _v: permit.v,
+  //     _r: permit.r,
+  //     _s: permit.s,
+  //   }, web3Amount, {
+  //     gasLimit: 10000
+  //   })
+  // }
 
 
   return (
@@ -266,23 +264,30 @@ const Home: NextPage = () => {
           <ConnectButton />
           <Box>
             <HStack spacing={12}>
-              <Box borderWidth='2px' borderRadius='lg' p='9'> 
-              <Container centerContent>
-              <Stat>
-                <StatLabel>USDC Balance</StatLabel>
-                <StatNumber>{usdcBalance}</StatNumber>
-              </Stat>
-              </Container>
-              <Button onClick={() => usdcMint.write()}>Mint USDC</Button>
+              <Box borderWidth='2px' borderRadius='lg' p='9'>
+                <Container centerContent>
+                  <Stat>
+                    <StatLabel>USDC Balance</StatLabel>
+                    <StatNumber>{usdcBalance}</StatNumber>
+                  </Stat>
+                </Container>
+                <Button
+                  mt={4}
+                  colorScheme='messenger'
+                  w='100%'
+                  variant='solid'
+                  onClick={() => checkAllowance()}
+                >
+                  Check Allowance
+                </Button>
               </Box>
-              <Box borderWidth='2px' borderRadius='lg' p='9'> 
-              <Container centerContent>
-              <Stat>
-                <StatLabel>WEB3 Balance</StatLabel>
-                <StatNumber>{(web3Balance).toFixed(3)}</StatNumber>
-              </Stat>
-              </Container>
-              <Button onClick={() => web3Mint.write()}>Mint WEB3</Button>
+              <Box borderWidth='2px' borderRadius='lg' p='9'>
+                <Container centerContent>
+                  <Stat>
+                    <StatLabel>WEB3 Balance</StatLabel>
+                    <StatNumber>{(web3Balance).toFixed(3)}</StatNumber>
+                  </Stat>
+                </Container>
               </Box>
             </HStack>
           </Box>
@@ -322,7 +327,7 @@ const Home: NextPage = () => {
                   colorScheme='messenger'
                   w='100%'
                   variant='solid'
-                  onClick={() => depositWithApproval()}
+                  onClick={() => approvalSwap()}
                 >
                   Swap
                 </Button>
@@ -348,29 +353,39 @@ const Home: NextPage = () => {
                 </Stack>
               </FormControl>
               <Stack spacing={2} align='center'>
-                <Button
-                  mt={4}
-                  colorScheme='messenger'
-                  w='100%'
-                  variant='solid'
-                  onClick={() => makePermit()}
-                >
-                  Permit USDC
-                </Button>
+                <HStack marginTop={4} width="100%">
+                  <Button
+                    colorScheme='messenger'
+                    variant='solid'
+                    w="100%"
+                    onClick={() => makePermit()}
+                  >
+                    Sign Permit
+                  </Button>
+                  <Button
+                    colorScheme='messenger'
+                    variant='solid'
+                    w="100%"
+                    onClick={() => permitUsdc()}
+                  >
+                    Send Permit
+                  </Button>
+                </HStack>
+
                 <Button
                   mt={4}
                   colorScheme='messenger'
                   w='100%'
                   variant='solid'
                   disabled={!permitStatus}
-                  onClick={() => depositContract()}
+                  onClick={() => permitSwap()}
                 >
                   Swap
                 </Button>
               </Stack>
 
             </Box>
-            <Box borderWidth='3px' borderRadius='lg' maxW='sm' overflow='hidden' p='9'>
+            {/* <Box borderWidth='3px' borderRadius='lg' maxW='sm' overflow='hidden' p='9'>
               <FormControl>
                 <FormLabel>Swap with Permit Gasless</FormLabel>
                 <Stack spacing={5}>
@@ -411,7 +426,7 @@ const Home: NextPage = () => {
                 </Button>
               </Stack>
 
-            </Box>
+            </Box> */}
 
           </HStack>
           <Box>

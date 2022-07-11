@@ -60,7 +60,7 @@ const makeDaiPermit = async (holder: any, spender: string, nonce: any) => {
 export const makeUsdcPermit = async (holder: any, spender: string, nonce: any, value: any, usdcAddress: string) => {
     const deadline = Math.floor(((new Date).getTime() / 1000) + 1000);
     const domain = {
-        name: "Circle USD Coin",
+        name: "USD Coin",
         version: "1",
         chainId: 31337,
         verifyingContract: usdcAddress,
@@ -80,6 +80,8 @@ export const makeUsdcPermit = async (holder: any, spender: string, nonce: any, v
         deadline
     };
     const types = { Permit };
+
+    console.log()
 
     return { domain, types, message };
 }
