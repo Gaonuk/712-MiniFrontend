@@ -1,11 +1,12 @@
 // import '../styles/globals.css';
 import '@rainbow-me/rainbowkit/styles.css';
 import type { AppProps } from 'next/app';
-import { RainbowKitProvider, getDefaultWallets } from '@rainbow-me/rainbowkit';
+import { RainbowKitProvider, getDefaultWallets, connectorsForWallets, wallet } from '@rainbow-me/rainbowkit';
 import { chain, configureChains, createClient, WagmiConfig, Chain } from 'wagmi';
 import { alchemyProvider } from 'wagmi/providers/alchemy';
 import { publicProvider } from 'wagmi/providers/public';
 import { ChakraProvider } from '@chakra-ui/react'
+import { rainbowMagicConnector } from '../helpers/RainbowMagicConnector';
 
 const anvil: Chain = {
   ...chain.localhost,
@@ -34,10 +35,22 @@ const { chains, provider, webSocketProvider } = configureChains(
   ]
 );
 
-const { connectors } = getDefaultWallets({
-  appName: 'Mini Frontend For Testing GSN',
-  chains,
-});
+// const { connectors } = getDefaultWallets({
+//   appName: 'Mini Frontend For Testing GSN',
+//   chains,
+// });
+
+const connectors = connectorsForWallets([
+  {
+    groupName: 'Recommended',
+    wallets: [
+      wallet.rainbow({ chains }),
+      wallet.walletConnect({ chains }),
+      wallet.metaMask({ chains }),
+      rainbowMagicConnector({ chains }) as any,
+    ],
+  },
+])
 
 const wagmiClient = createClient({
   autoConnect: true,

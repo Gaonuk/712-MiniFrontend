@@ -25,17 +25,19 @@ import {
   InputRightAddon
 } from '@chakra-ui/react'
 import qs from "qs"
-import { makeUsdcPermit, getSignatureParameters } from "../helpers/eip712Helpers";
-import { useAccount, useContractRead, useSignTypedData, useContractWrite, useSendTransaction, useProvider, useNetwork } from 'wagmi';
+import { makeUsdcPermitMainnet, makeUsdcPermitPolygon, getSignatureParameters } from "../helpers/eip712Helpers";
+import { useAccount, useContractRead, useSignTypedData, useContractWrite, useSendTransaction, useProvider, useNetwork, chainId } from 'wagmi';
 import { usdcABI } from '../helpers/usdcABI';
 import { depositABI } from '../helpers/depositABI'
 import { ethers, providers } from 'ethers';
 import { web3Abi } from '../helpers/web3Abi';
 import { RelayProvider } from '@opengsn/provider';
+import { getPermitSignature } from '../helpers/permitHelpers';
+import { sign } from 'crypto';
 
 const usdcAddress = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 const web3Address = "0xBcD2C5C78000504EFBC1cE6489dfcaC71835406A"
-const contractAddress = "0x0e075cB6f980203F8e930a0B527CDbE07F303eAD"
+const contractAddress = "0x2b15063a6f8a11d18404c801f295b1d19dcc8574"
 
 const Home: NextPage = () => {
   const { address, isConnecting, isDisconnected } = useAccount()
@@ -144,7 +146,25 @@ const Home: NextPage = () => {
   }
 
   const makePermit = async () => {
-    let { domain, types, message } = await makeUsdcPermit(address, contractAddress, +data, usdcAmount * 10 ** 6, usdcAddress)
+    let web3 = new ethers.providers.Web3Provider(window.ethereum)
+    let signer = web3.getSigner()
+    let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
+    let DOMAIN_SEPARATOR = await contract.DOMAIN_SEPARATOR();
+    let cname = await contract.name();
+    let version = await contract.EIP712_VERSION();
+    console.log(cname + "  " + version)
+    let something = await ethers.utils._TypedDataEncoder.hashDomain({
+      name: "USD Coin (PoS)",
+      version: "1",
+      verifyingContract: usdcAddress,
+      salt: ethers.utils.hexZeroPad(ethers.BigNumber.from(137).toHexString(), 32)
+    })
+    let something2 = await ethers.utils.hexlify(something)
+    console.log("DOMAIN_SEPARATOR: " + DOMAIN_SEPARATOR)
+    console.log("HASHED_DOMAIN " + something)
+    console.log("HEX HASHED_DOMAIN " + something2)
+    console.log("DOMAIN_SEPARATOR MAINNET: " + "0x06c37168a7db5138defc7866392bb87a741f9b3d104deb5094588ce041cae335")
+    let { domain, types, message } = await makeUsdcPermitPolygon(address, contractAddress, +data, usdcAmount * 10 ** 6, usdcAddress)
     let signature = await signTypedDataAsync({
       domain,
       types,
@@ -160,6 +180,19 @@ const Home: NextPage = () => {
     setPermitStatus(permitStatus => true)
   }
 
+  const testingPermit = async () => {
+    const PERMIT_TYPEHASH = '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
+    let web3 = new ethers.providers.Web3Provider(window.ethereum)
+    let signer = web3.getSigner()
+    let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
+    let DOMAIN_SEPARATOR = await contract.DOMAIN_SEPARATOR();
+    let abi = ethers.utils.defaultAbiCoder
+    let _permit = permit.message
+    let permitHash = await ethers.utils.keccak256(abi.encode([PERMIT_TYPEHASH], [_permit.owner, _permit.spender, _permit.value, _permit.nonce, _permit.deadline]))
+    let typedDataHash = await ethers.utils.keccak256(ethers.utils.concat(["\x19\x01", DOMAIN_SEPARATOR, permitHash]))
+    console.log(typedDataHash)
+  }
+
   const approveUSDC = async () => {
     await usdcApprove.write({
       args: [contractAddress, usdcAmount * 10 ** 6]
@@ -171,7 +204,6 @@ const Home: NextPage = () => {
     let web3 = new ethers.providers.Web3Provider(window.ethereum)
     let signer = web3.getSigner()
     let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
-    console.log(permit)
     let result = await contract.permit(address, contractAddress, usdcAmount * 10 ** 6, permit.message.deadline, permit.v, permit.r, permit.s, {
       gasLimit: 21000
     });

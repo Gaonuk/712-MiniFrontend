@@ -12,6 +12,7 @@
     "@chakra-ui/react": "^2.2.1",
     "@emotion/react": "^11.9.3",
     "@emotion/styled": "^11.9.3",
+    "@everipedia/wagmi-magic-connector": "^0.6.0",
     "@opengsn/provider": "^2.2.6",
     "@rainbow-me/rainbowkit": "^0.4.1",
     "@types/qs": "^6.9.7",
