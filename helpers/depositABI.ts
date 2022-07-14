@@ -30,6 +30,10 @@ export const depositABI = [
     "type": "event"
   },
   {
+    "stateMutability": "payable",
+    "type": "fallback"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -44,12 +48,12 @@ export const depositABI = [
       {
         "components": [
           {
-            "internalType": "contract IERC20",
+            "internalType": "contract ERC20",
             "name": "sellToken",
             "type": "address"
           },
           {
-            "internalType": "contract IERC20",
+            "internalType": "contract ERC20",
             "name": "buyToken",
             "type": "address"
           },
@@ -67,6 +71,11 @@ export const depositABI = [
             "internalType": "bytes",
             "name": "swapCallData",
             "type": "bytes"
+          },
+          {
+            "internalType": "uint256",
+            "name": "swapValue",
+            "type": "uint256"
           }
         ],
         "internalType": "struct PermitSwap.SwapData",
@@ -136,12 +145,12 @@ export const depositABI = [
       {
         "components": [
           {
-            "internalType": "contract IERC20",
+            "internalType": "contract ERC20",
             "name": "sellToken",
             "type": "address"
           },
           {
-            "internalType": "contract IERC20",
+            "internalType": "contract ERC20",
             "name": "buyToken",
             "type": "address"
           },
@@ -159,6 +168,11 @@ export const depositABI = [
             "internalType": "bytes",
             "name": "swapCallData",
             "type": "bytes"
+          },
+          {
+            "internalType": "uint256",
+            "name": "swapValue",
+            "type": "uint256"
           }
         ],
         "internalType": "struct PermitSwap.SwapData",
@@ -170,5 +184,9 @@ export const depositABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "stateMutability": "payable",
+    "type": "receive"
   }
 ]

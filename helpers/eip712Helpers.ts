@@ -60,10 +60,10 @@ const makeDaiPermit = async (holder: any, spender: string, nonce: any) => {
 export const makeUsdcPermit = async (holder: any, spender: string, nonce: any, value: any, usdcAddress: string) => {
     const deadline = Math.floor(((new Date).getTime() / 1000) + 1000);
     const domain = {
-        name: "USD Coin",
+        name: "USD Coin (PoS)",
         version: "1",
-        chainId: 31337,
         verifyingContract: usdcAddress,
+        salt: ethers.utils.hexZeroPad(ethers.BigNumber.from(137).toHexString(), 32)
     };
     const Permit = [
         { name: "owner", type: "address" },

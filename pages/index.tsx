@@ -1,6 +1,6 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { NextPage } from 'next';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Head from 'next/head';
 // import styles from '../styles/Home.module.css';
 import {
@@ -31,15 +31,18 @@ import { usdcABI } from '../helpers/usdcABI';
 import { depositABI } from '../helpers/depositABI'
 import { ethers, providers } from 'ethers';
 import { web3Abi } from '../helpers/web3Abi';
-import { RelayProvider } from '@opengsn/provider';
+import { Biconomy } from "@biconomy/mexa";
+import { gaslessAbi } from '../helpers/gaslessABI';
+import { Web3Provider } from '@ethersproject/providers';
 
 const usdcAddress = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 const web3Address = "0xBcD2C5C78000504EFBC1cE6489dfcaC71835406A"
-const contractAddress = "0x0e075cB6f980203F8e930a0B527CDbE07F303eAD"
+const contractAddress = "0xbbCA2AcBd87Ce7A5e01fb56914d41F6a7e5C5A56"
+const gaslessAddress = "0xA41E4E19010EC160daD9Ce8FE60153896313eF97"
 
 const Home: NextPage = () => {
   const { address, isConnecting, isDisconnected } = useAccount()
-  const [usdcAmount, setUsdcAmount] = useState(0);
+  const [usdcAmount, setUsdcAmount] = useState(0.01);
   const [web3Amount, setWeb3Amount] = useState(0);
   const [usdcBalance, setBalance] = useState(0);
   const [web3Balance, setWeb3Balance] = useState(0);
@@ -55,13 +58,30 @@ const Home: NextPage = () => {
       deadline: 0
     }
   });
+  const [gasless, setGasless] = useState(false);
   const [quoteData, setQuoteData] = useState({
     spender: "",
     swapTarget: "",
-    swapCallData: ""
+    swapCallData: "",
+    swapValue: 0
   })
   const [permitStatus, setPermitStatus] = useState(false);
   const [approveStatus, setApproveStatus] = useState(false);
+  const [provider, setProvider] = useState<Web3Provider>();
+  const [biconomy, setBiconomy] = useState<Biconomy>();
+  if (typeof window !== "undefined") {
+    // Client-side-only code
+  }
+  useEffect(() => {
+
+    setProvider(provider => new ethers.providers.Web3Provider(window.ethereum, "any"))
+    setBiconomy(biconomy => new Biconomy(new ethers.providers.Web3Provider(window.ethereum, "any"), {
+      apiKey: "BICONOMY_API_KEY",
+      debug: true
+    }))
+  }, [])
+
+  
   const { data } = useContractRead({
     addressOrName: usdcAddress,
     contractInterface: usdcABI,
@@ -140,11 +160,12 @@ const Home: NextPage = () => {
       spender: quote.allowanceTarget,
       swapTarget: quote.to,
       swapCallData: quote.data,
+      swapValue: quote.value
     }))
   }
 
   const makePermit = async () => {
-    let { domain, types, message } = await makeUsdcPermit(address, contractAddress, +data, usdcAmount * 10 ** 6, usdcAddress)
+    let { domain, types, message } = await makeUsdcPermit(address, gaslessAddress, +data, usdcAmount * 10 ** 6, usdcAddress)
     let signature = await signTypedDataAsync({
       domain,
       types,
@@ -158,11 +179,18 @@ const Home: NextPage = () => {
       message
     }));
     setPermitStatus(permitStatus => true)
+    let web3 = new ethers.providers.Web3Provider(window.ethereum)
+    let signer = web3.getSigner()
+    let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
+    let domain_separator = await contract.DOMAIN_SEPARATOR();
+    console.log(domain_separator)
+    console.log(ethers.utils._TypedDataEncoder.hashDomain(domain))
+    console.log(permit)
   }
 
   const approveUSDC = async () => {
     await usdcApprove.write({
-      args: [contractAddress, usdcAmount * 10 ** 6]
+      args: [gaslessAddress, usdcAmount * 10 ** 6]
     })
 
   }
@@ -172,9 +200,7 @@ const Home: NextPage = () => {
     let signer = web3.getSigner()
     let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
     console.log(permit)
-    let result = await contract.permit(address, contractAddress, usdcAmount * 10 ** 6, permit.message.deadline, permit.v, permit.r, permit.s, {
-      gasLimit: 21000
-    });
+    let result = await contract.permit(address, gaslessAddress, usdcAmount * 10 ** 6, permit.message.deadline, permit.v, permit.r, permit.s);
   }
 
   const checkAllowance = async () => {
@@ -182,8 +208,103 @@ const Home: NextPage = () => {
     let signer = web3.getSigner()
     let contract = new ethers.Contract(usdcAddress, usdcABI, signer)
     let result = await contract.allowance(address, contractAddress);
-    console.log(+result)
+    console.log(ethers.BigNumber.from(result).toNumber())
   }
+
+  const gaslessNormalSwap = async () => {
+    let contract = new ethers.Contract(gaslessAddress, gaslessAbi, (biconomy as any).getSignerByAddress(address));
+    let contractInterface = new ethers.utils.Interface(gaslessAbi);
+
+    let { data } = await contract.populateTransaction.swapNormal(usdcAddress, usdcAmount * 10 ** 6, {
+      sellToken: usdcAddress,
+      buyToken: web3Address,
+      spender: quoteData.spender,
+      swapTarget: quoteData.swapTarget,
+      swapCallData: quoteData.swapCallData,
+      swapValue: quoteData.swapValue
+    });
+    let provider = (biconomy as any).getEthersProvider();
+    let gasLimit = await provider.estimateGas({
+      to: gaslessAddress,
+      from: address,
+      data: data
+    });
+    console.log("Gas limit: ", gasLimit);
+
+    let txParams = {
+      data: data,
+      to: gaslessAddress,
+      from: address,
+      gasLimit: 8000000,
+      signatureType: "EIP712_SIGN"
+    }
+
+    let tx = await provider.send("eth_sendTransaction", [txParams])
+    console.log("Transaction hash : ", tx);
+
+    provider.once(tx, (transaction) => {
+      console.log(transaction);
+    })
+  }
+
+  const gaslessPermitSwap = async () => {
+    let contract = new ethers.Contract(gaslessAddress, gaslessAbi, (biconomy as any).getSignerByAddress(address));
+
+    let { data } = await contract.populateTransaction.swapWithPermit({
+      _tokenContract: usdcAddress,
+      _amount: usdcAmount * 10 ** 6,
+      _owner: address,
+      _spender: gaslessAddress,
+      _value: permit.message.value,
+      _deadline: permit.message.deadline,
+      _v: permit.v,
+      _r: permit.r,
+      _s: permit.s,
+    }, {
+      sellToken: usdcAddress,
+      buyToken: web3Address,
+      spender: quoteData.spender,
+      swapTarget: quoteData.swapTarget,
+      swapCallData: quoteData.swapCallData,
+      swapValue: quoteData.swapValue
+    }, {
+      gasLimit: 8000000
+    });
+    let provider = (biconomy as any).getEthersProvider();
+    let gasLimit = await provider.estimateGas({
+      to: gaslessAddress,
+      from: address,
+      data: data
+    });
+    console.log("Gas limit: ", gasLimit);
+
+    let txParams = {
+      data: data,
+      to: gaslessAddress,
+      from: address,
+      gasLimit: 8000000,
+      signatureType: "EIP712_SIGN"
+    }
+
+    let tx = await provider.send("eth_sendTransaction", [txParams])
+    console.log("Transaction hash : ", tx);
+
+    provider.once(tx, (transaction) => {
+      console.log(transaction);
+    })
+  }
+
+
+
+  // const biconomyInit = async () => {
+  //   biconomy.onEvent(biconomy.READY, () => {
+  //     setGasless(gasless => true)
+  //     console.log("Biconomy initialized")
+  //   }).onEvent(biconomy.ERROR, (error, message) => {
+  //     // Handle error while initializing mexa
+  //   });
+  //   console.log(biconomy)
+  // }
 
 
   const approvalSwap = async () => {
@@ -194,8 +315,25 @@ const Home: NextPage = () => {
         spender: quoteData.spender,
         swapTarget: quoteData.swapTarget,
         swapCallData: quoteData.swapCallData,
+        swapValue: quoteData.swapValue
       }]
     })
+  }
+
+  const callgasless = async () => {
+    let web3 = new ethers.providers.Web3Provider(window.ethereum)
+    let signer = web3.getSigner()
+    let contract = new ethers.Contract("0xf5F8CCeF1C4b946E61891576252327Ec135A7Fdd", gaslessAbi, signer)
+    let result = await contract.swapNormal(usdcAddress, usdcAmount * 10 ** 6, {
+      sellToken: usdcAddress,
+      buyToken: web3Address,
+      spender: quoteData.spender,
+      swapTarget: quoteData.swapTarget,
+      swapCallData: quoteData.swapCallData,
+      swapValue: quoteData.swapValue
+    }, {
+      gasLimit: 8000000
+    });
   }
 
   const permitSwap = async () => {
@@ -216,10 +354,8 @@ const Home: NextPage = () => {
         spender: quoteData.spender,
         swapTarget: quoteData.swapTarget,
         swapCallData: quoteData.swapCallData,
-      }],
-      overrides: {
-        gasLimit: 21000
-      }
+        swapValue: quoteData.swapValue
+      }]
     })
   }
 
@@ -288,6 +424,26 @@ const Home: NextPage = () => {
                     <StatNumber>{(web3Balance).toFixed(3)}</StatNumber>
                   </Stat>
                 </Container>
+              </Box>
+              <Box borderWidth='2px' borderRadius='lg' p='9'>
+                <Button
+                  mt={4}
+                  colorScheme='messenger'
+                  w='100%'
+                  variant='solid'
+                onClick={() => callgasless()}
+                >
+                  Call Normal Swap on Gasless
+                </Button>
+                <Button
+                  mt={4}
+                  colorScheme='messenger'
+                  w='100%'
+                  variant='solid'
+                  onClick={() => gaslessNormalSwap()}
+                >
+                  Gasless Swap
+                </Button>
               </Box>
             </HStack>
           </Box>
@@ -378,7 +534,7 @@ const Home: NextPage = () => {
                   w='100%'
                   variant='solid'
                   disabled={!permitStatus}
-                  onClick={() => permitSwap()}
+                  onClick={() => gaslessPermitSwap()}
                 >
                   Swap
                 </Button>
