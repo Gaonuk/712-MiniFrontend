@@ -16,6 +16,7 @@
     "@opengsn/provider": "^2.2.6",
     "@rainbow-me/rainbowkit": "^0.4.1",
     "@types/qs": "^6.9.7",
+    "ethereum-multicall": "^2.14.0",
     "ethers": "^5.0.0",
     "framer-motion": "^6.3.16",
     "next": "^12.1.6",
