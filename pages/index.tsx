@@ -76,7 +76,7 @@ const Home: NextPage = () => {
   useEffect(() => {
     setProvider(provider => new ethers.providers.Web3Provider(window.ethereum, "any"))
     setBiconomy(biconomy => new Biconomy(new ethers.providers.Web3Provider(window.ethereum, "any"), {
-      apiKey: "jO1RzjtDY.dfd5fa77-a78c-4911-86b2-947f685448c3",
+      apiKey: "",
       debug: true
     }))
   }, [])
